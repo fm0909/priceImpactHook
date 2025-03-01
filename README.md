@@ -1,38 +1,74 @@
-##
+# PriceImpactHook
 
-propery 'lpFee' exists in 'Pool.State.Slot0'
+A Uniswap v4 hook that dynamically adjusts trading fees based on the price impact of swaps.
 
-##
+## Overview
 
-Update fee either via 'updateDynamicLPFee' for infrequent updates,
-or 'beforeSwap' for dynamic updates each swap
+PriceImpactHook is a custom Uniswap v4 hook designed to create more efficient markets by charging higher fees for trades that have larger price impacts. This helps to:
 
-## Mechanism Design
+1. Protect liquidity providers from large price swings
+2. Discourage large trades that significantly move the market
+3. Create a more equitable fee structure where traders pay fees proportional to their market impact
 
-Q. How to track gas price or some other metric to update the fee?
+The hook implements a dynamic fee calculation system that starts with a base fee and scales it up based on the estimated price impact of each swap.
 
-there is no way to fetch the average gas price onchain, so we have to build a basic average gas-price tracker
+## Features
 
-we can only track the gas prie of transaction that are coming to our hook
-we will use this to update out internal moving average gas price value
+- **Dynamic Fee Calculation**: Fees scale with the price impact of trades
+- **Configurable Parameters**: Adjustable base fee, minimum fee, maximum fee, and impact multiplier
+- **Owner Controls**: Only the owner can update fee parameters
 
-Q. How much to increase or decrease the fee subject to how much the gas price is higher or lower than the average?
+## How It Works
 
-if current_gas_price > average_gas_price {
-charge swap fees = base fees / 2;
-} else if current_gas_price < 90% of average_gas_price {
-charge swap fees = base fees \* 2;
-} else {
-charge swap fees = base fees;
-}
+1. When a swap is initiated, the hook calculates the estimated price impact of the trade
+2. Based on the impact, it calculates an appropriate fee using the formula:
+   ```
+   fee = baseFee + (priceImpactBips * impactMultiplier)
+   ```
+3. The fee is bounded by the configured minimum and maximum values
+4. The hook returns the calculated fee to the pool manager, which applies it to the swap
 
-## Flow
+## Fee Parameters
 
-'beforeInitialize':
--> make sure that the pool is initialized with support for dynamic fees
+- `baseFee`: The starting fee for all swaps (default: 500 = 0.05%)
+- `minFee`: The minimum fee that can be charged (default: 100 = 0.01%)
+- `maxFee`: The maximum fee that can be charged (default: 25000 = 2.5%)
+- `impactMultiplier`: Scales how aggressively fees increase with price impact (default: 50)
 
-'beforeSwap':
--> track the gas price of the transaction coming through our hook and change the swap fees accordingly
+## Usage
 
-'afterSwap':
--> update the average gas price based on the gas price of the transaction
+When creating a Uniswap v4 pool, specify this hook as the `hooks` parameter in the `PoolKey` and make sure to set the dynamic fee flag in the `fee` parameter.
+
+```solidity
+// Example pool creation
+PoolKey memory key = PoolKey({
+    currency0: currency0,
+    currency1: currency1,
+    fee: LPFeeLibrary.DYNAMIC_FEE_FLAG, // Must use dynamic fee flag
+    tickSpacing: 60,
+    hooks: IHooks(address(priceImpactHook))
+});
+
+poolManager.initialize(key, startingPrice, "");
+```
+
+## Requirements
+
+- Uniswap v4-core
+- Uniswap v4-periphery
+- Solidity 0.8.x
+
+## Setup
+
+1. Deploy the PriceImpactHook with the Uniswap v4 PoolManager address
+2. Create pools that use the hook with the dynamic fee flag set
+3. Configure fee parameters as needed for your specific use case
+
+## Admin Functions
+
+- `updateFeeParameters(uint24 _baseFee, uint24 _minFee, uint24 _maxFee, uint24 _impactMultiplier)`: Update the fee calculation parameters
+- `transferOwnership(address newOwner)`: Transfer control of the hook to a new owner
+
+## License
+
+MIT
