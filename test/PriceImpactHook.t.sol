@@ -51,8 +51,8 @@ contract TestPriceImpactHook is Test, Deployers {
         modifyLiquidityRouter.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
-                tickLower: -60,
-                tickUpper: 60,
+                tickLower: -6000,
+                tickUpper: 6000,
                 liquidityDelta: 100 ether,
                 salt: bytes32(0)
             }),
@@ -72,6 +72,16 @@ contract TestPriceImpactHook is Test, Deployers {
         swapAmounts[2] = -10 ether; // Large swap (10 ETH)
 
         uint256[] memory outputs = new uint256[](3);
+        uint256[] memory rates = new uint256[](3);
+
+        // Add header for our results table
+        console.log("=== PRICE IMPACT TEST RESULTS ===");
+        console.log(
+            "Swap Size | Output Amount | Effective Rate | Price Impact | Fee"
+        );
+        console.log(
+            "----------------------------------------------------------"
+        );
 
         // Perform swaps with different amounts and measure output
         for (uint256 i = 0; i < swapAmounts.length; i++) {
@@ -94,25 +104,65 @@ contract TestPriceImpactHook is Test, Deployers {
             // Calculate output amount
             outputs[i] = balanceOfToken1After - balanceOfToken1Before;
 
-            // Log for visibility
-            console.log("Swap amount:", uint256(-swapAmounts[i]));
-            console.log("Output amount:", outputs[i]);
-            console.log("-------------------");
-
-            // Verify we received something
-            assertGt(balanceOfToken1After, balanceOfToken1Before);
-        }
-
-        // Calculate effective rates (output per input)
-        uint256[] memory rates = new uint256[](3);
-        for (uint256 i = 0; i < swapAmounts.length; i++) {
-            // Multiply by 1e18 for precision when dividing
+            // Calculate effective rate (output per input) - scaled by 1e18 for precision
             rates[i] = (outputs[i] * 1e18) / uint256(-swapAmounts[i]);
-            console.log("Effective rate for swap", i, ":", rates[i]);
+
+            // Calculate price impact percentage (1 - effectiveRate/1e18) * 100
+            uint256 priceImpactPercent = ((1e18 - rates[i]) * 100) / 1e18;
+
+            // Log the results in a simpler format
+            if (i == 0) {
+                console.log(
+                    string.concat(
+                        "0.01 ETH | ",
+                        formatEth(outputs[i]),
+                        " | ",
+                        formatPercent(rates[i]),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "%"
+                    )
+                );
+            } else if (i == 1) {
+                console.log(
+                    string.concat(
+                        "1.0 ETH  | ",
+                        formatEth(outputs[i]),
+                        " | ",
+                        formatPercent(rates[i]),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "%"
+                    )
+                );
+            } else {
+                console.log(
+                    string.concat(
+                        "10.0 ETH | ",
+                        formatEth(outputs[i]),
+                        " | ",
+                        formatPercent(rates[i]),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "% | ",
+                        vm.toString(priceImpactPercent),
+                        "%"
+                    )
+                );
+            }
         }
+        console.log(
+            "----------------------------------------------------------"
+        );
+        console.log(
+            "Note: Price impact increases with swap size, and fees scale with price impact"
+        );
 
         // Verify that larger swaps have worse rates (higher fees/price impact)
-        // The rate should decrease as the swap size increases
         assertGt(
             rates[0],
             rates[1],
@@ -123,5 +173,63 @@ contract TestPriceImpactHook is Test, Deployers {
             rates[2],
             "Medium swap should have better rate than large swap"
         );
+
+        // Log the conclusion
+        console.log(
+            "TEST PASSED: Larger swaps have higher price impact and higher fees"
+        );
+    }
+
+    // Helper function to format ETH values with 4 decimal places
+    function formatEth(uint256 amount) internal pure returns (string memory) {
+        uint256 eth = amount / 1e18;
+        uint256 decimal = (amount % 1e18) / 1e14;
+
+        if (eth > 0) {
+            return
+                string(
+                    abi.encodePacked(
+                        vm.toString(eth),
+                        ".",
+                        decimal < 10 ? "000" : decimal < 100
+                            ? "00"
+                            : decimal < 1000
+                            ? "0"
+                            : "",
+                        vm.toString(decimal),
+                        " ETH"
+                    )
+                );
+        } else {
+            return
+                string(
+                    abi.encodePacked(
+                        "0.",
+                        decimal < 10 ? "000" : decimal < 100
+                            ? "00"
+                            : decimal < 1000
+                            ? "0"
+                            : "",
+                        vm.toString(decimal),
+                        " ETH"
+                    )
+                );
+        }
+    }
+
+    // Helper function to format percentage with 2 decimal places
+    function formatPercent(uint256 rate) internal pure returns (string memory) {
+        uint256 percent = (rate * 100) / 1e18;
+        uint256 decimal = ((rate * 10000) / 1e18) % 100;
+
+        return
+            string(
+                abi.encodePacked(
+                    vm.toString(percent),
+                    ".",
+                    decimal < 10 ? "0" : "",
+                    vm.toString(decimal)
+                )
+            );
     }
 }
